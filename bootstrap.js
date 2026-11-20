@@ -6,7 +6,10 @@ const http = require("http");
 const port = Number(process.argv[2]);
 const origin = new URL(process.env.AUTH_URL).origin;
 const host = new URL(origin).host;
-const email = process.env.ADMIN_EMAIL.trim().toLowerCase();
+// Louez validates the address as an email with a dotted domain. A local run with RAILWAY_PUBLIC_DOMAIN=localhost gives admin@localhost, which it
+// refuses, so a dotless domain gets .example.com. A Railway domain always has dots.
+let email = process.env.ADMIN_EMAIL.trim().toLowerCase();
+if (!/@[^@.]+\.[^@]+$/.test(email)) email += ".example.com";
 const password = process.env.ADMIN_PASSWORD;
 const name = process.env.ADMIN_NAME || "Owner";
 

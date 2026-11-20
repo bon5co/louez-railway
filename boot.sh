@@ -21,12 +21,40 @@ export AUTH_SECRET
 REAL_PORT="$PORT"
 INTERNAL_PORT=5999
 echo "[railway] Louez on :$REAL_PORT as $AUTH_URL, uid=$(id -u); bootstrapping on 127.0.0.1:$INTERNAL_PORT first"
-PORT="$INTERNAL_PORT" "$@" &
-APP=$!
-if ! node /railway-bootstrap.js "$INTERNAL_PORT"; then
-  kill "$APP" 2>/dev/null
-  fail "bootstrap failed, see the lines above"
-fi
+# Two containers can start against one empty database at the same moment (a platform that deploys a service twice while it is
+# created). Upstream's migrator then sees the other container's half-built schema and exits, and the server never listens. Wait
+# for the server to stay up while the owner is registered; if it dies first, the other container has finished the schema by now,
+# so start again (the migrator and the owner registration are both idempotent).
+attempt=0
+while :; do
+  attempt=$((attempt + 1))
+  PORT="$INTERNAL_PORT" "$@" &
+  APP=$!
+  node /railway-bootstrap.js "$INTERNAL_PORT" &
+  BS=$!
+  died=""
+  while kill -0 "$BS" 2>/dev/null; do
+    if ! kill -0 "$APP" 2>/dev/null; then
+      died=1
+      kill "$BS" 2>/dev/null
+      break
+    fi
+    sleep 1
+  done
+  if [ -n "$died" ]; then
+    wait "$BS" 2>/dev/null
+    wait "$APP" 2>/dev/null
+    [ "$attempt" -lt 6 ] || fail "server exited during bootstrap $attempt times, see the lines above"
+    echo "[railway] server exited during bootstrap (attempt $attempt); retrying in 15s"
+    sleep 15
+    continue
+  fi
+  if ! wait "$BS"; then
+    kill "$APP" 2>/dev/null
+    fail "bootstrap failed, see the lines above"
+  fi
+  break
+done
 kill "$APP" 2>/dev/null
 wait "$APP" 2>/dev/null
 echo "[railway] bootstrap done, starting on :$REAL_PORT"

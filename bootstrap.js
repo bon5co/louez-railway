@@ -52,7 +52,8 @@ async function waitHealthy() {
     console.log("[bootstrap] owner registered; public registration is now closed");
     return;
   }
-  if (up.status === 403 && /REGISTRATION_CLOSED/.test(up.text)) {
+  // 403 REGISTRATION_CLOSED: another owner exists. 422 USER_ALREADY_EXISTS: this owner exists (a restart, or a retried deploy).
+  if ((up.status === 403 && /REGISTRATION_CLOSED/.test(up.text)) || (up.status === 422 && /USER_ALREADY_EXISTS/.test(up.text))) {
     const inn = await call("POST", "/api/auth/sign-in/email", { email, password });
     if (inn.status === 200) console.log("[bootstrap] owner already registered; ADMIN_PASSWORD still signs in");
     else console.log("[bootstrap] owner already registered; ADMIN_PASSWORD no longer matches (changed in the app), leaving it");
